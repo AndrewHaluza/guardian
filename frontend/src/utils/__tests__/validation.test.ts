@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateVulnerability, validateVulnerabilities } from '../validation';
+import { validateVulnerability, validateVulnerabilities, validateRepoUrl } from '../validation';
 
 describe('Validation Utilities', () => {
   describe('validateVulnerability', () => {
@@ -164,6 +164,168 @@ describe('Validation Utilities', () => {
       expect(result[0].Severity).toBe('CRITICAL');
       expect(result[1].Severity).toBe('UNKNOWN');
       expect(result[2].Severity).toBe('HIGH');
+    });
+  });
+
+  describe('validateRepoUrl', () => {
+    describe('Valid URLs', () => {
+      it('should accept valid GitHub URL', () => {
+        const result = validateRepoUrl('https://github.com/user/repo');
+        expect(result).toBeNull();
+      });
+
+      it('should accept valid GitLab URL', () => {
+        const result = validateRepoUrl('https://gitlab.com/user/repo');
+        expect(result).toBeNull();
+      });
+
+      it('should accept valid Bitbucket URL', () => {
+        const result = validateRepoUrl('https://bitbucket.org/user/repo');
+        expect(result).toBeNull();
+      });
+
+      it('should accept valid Codeberg URL', () => {
+        const result = validateRepoUrl('https://codeberg.org/user/repo');
+        expect(result).toBeNull();
+      });
+
+      it('should accept valid Framagit URL', () => {
+        const result = validateRepoUrl('https://framagit.org/user/repo');
+        expect(result).toBeNull();
+      });
+
+      it('should accept valid Sourcehut URL', () => {
+        const result = validateRepoUrl('https://sourcehut.org/user/repo');
+        expect(result).toBeNull();
+      });
+
+      it('should accept URLs with subdomains', () => {
+        const result = validateRepoUrl('https://my-instance.github.com/user/repo');
+        expect(result).toBeNull();
+      });
+
+      it('should accept URLs with complex paths', () => {
+        const result = validateRepoUrl('https://github.com/user/repo/tree/main');
+        expect(result).toBeNull();
+      });
+
+      it('should trim whitespace from valid URLs', () => {
+        const result = validateRepoUrl('  https://github.com/user/repo  ');
+        expect(result).toBeNull();
+      });
+    });
+
+    describe('Invalid URLs - Missing or Empty', () => {
+      it('should reject empty string', () => {
+        const result = validateRepoUrl('');
+        expect(result).toBe('Repository URL is required');
+      });
+
+      it('should reject null', () => {
+        const result = validateRepoUrl(null as any);
+        expect(result).toBe('Repository URL is required');
+      });
+
+      it('should reject undefined', () => {
+        const result = validateRepoUrl(undefined as any);
+        expect(result).toBe('Repository URL is required');
+      });
+
+      it('should reject whitespace-only string', () => {
+        const result = validateRepoUrl('   ');
+        expect(result).not.toBeNull();
+      });
+    });
+
+    describe('Invalid URLs - Protocol', () => {
+      it('should reject HTTP URLs', () => {
+        const result = validateRepoUrl('http://github.com/user/repo');
+        expect(result).toBe('Only HTTPS URLs are allowed (https://...)');
+      });
+
+      it('should reject FTP URLs', () => {
+        const result = validateRepoUrl('ftp://github.com/user/repo');
+        expect(result).toBe('Only HTTPS URLs are allowed (https://...)');
+      });
+
+      it('should reject URLs without protocol', () => {
+        const result = validateRepoUrl('github.com/user/repo');
+        expect(result).toContain('valid HTTPS URL');
+      });
+
+      it('should reject git+ssh URLs', () => {
+        const result = validateRepoUrl('git@github.com:user/repo.git');
+        expect(result).toContain('valid HTTPS URL');
+      });
+    });
+
+    describe('Invalid URLs - Disallowed Hosts', () => {
+      it('should reject non-Git hosting services', () => {
+        const result = validateRepoUrl('https://google.com');
+        expect(result).toContain('allowed Git hosting service');
+        expect(result).toContain('github.com');
+      });
+
+      it('should reject custom domains', () => {
+        const result = validateRepoUrl('https://my-git-server.com/repo');
+        expect(result).toContain('allowed Git hosting service');
+      });
+
+      it('should reject localhost URLs', () => {
+        const result = validateRepoUrl('https://localhost:3000/repo');
+        expect(result).toContain('allowed Git hosting service');
+      });
+
+      it('should reject IP addresses', () => {
+        const result = validateRepoUrl('https://192.168.1.1/repo');
+        expect(result).toContain('allowed Git hosting service');
+      });
+
+      it('should list all allowed hosts in error message', () => {
+        const result = validateRepoUrl('https://notallowed.com/repo');
+        expect(result).toContain('github.com');
+        expect(result).toContain('gitlab.com');
+        expect(result).toContain('bitbucket.org');
+        expect(result).toContain('codeberg.org');
+        expect(result).toContain('framagit.org');
+        expect(result).toContain('sourcehut.org');
+      });
+    });
+
+    describe('Invalid URLs - Malformed', () => {
+      it('should reject invalid URL syntax with bad port', () => {
+        const result = validateRepoUrl('https://github.com:invalid:port/repo');
+        expect(result).toContain('valid HTTPS URL');
+      });
+
+      it('should accept URLs with spaces (normalized by URL constructor)', () => {
+        // The URL constructor normalizes spaces to %20, so these are valid from the constructor's perspective
+        const result = validateRepoUrl('https://github.com/user/my repo');
+        expect(result).toBeNull(); // Spaces get normalized to %20
+      });
+
+      it('should accept URLs with angle brackets (normalized by URL constructor)', () => {
+        // The URL constructor normalizes special characters, making them valid
+        const result = validateRepoUrl('https://github.com/user/<script>/repo');
+        expect(result).toBeNull(); // Angle brackets get normalized
+      });
+    });
+
+    describe('Type checking', () => {
+      it('should handle non-string input gracefully', () => {
+        const result = validateRepoUrl(123 as any);
+        expect(result).toBe('Repository URL is required');
+      });
+
+      it('should handle object input', () => {
+        const result = validateRepoUrl({ url: 'https://github.com' } as any);
+        expect(result).toBe('Repository URL is required');
+      });
+
+      it('should handle array input', () => {
+        const result = validateRepoUrl(['https://github.com/user/repo'] as any);
+        expect(result).toBe('Repository URL is required');
+      });
     });
   });
 });

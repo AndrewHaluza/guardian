@@ -1,5 +1,6 @@
 import { useSubscription, useQuery } from '@apollo/client/react';
 import { useParams } from 'react-router-dom';
+import { MdFirstPage, MdChevronLeft, MdChevronRight, MdLastPage } from 'react-icons/md';
 import { SCAN_STATUS_SUBSCRIPTION, GET_SCAN } from '../graphql/queries';
 import {
   ScanStatus as ScanStatusType,
@@ -129,7 +130,7 @@ export function ScanDetails() {
                     className="btn btn-small"
                     aria-label="Go to first page"
                   >
-                    First
+                    <MdFirstPage size={20} />
                   </button>
                   <button
                     onClick={goToPrevious}
@@ -137,24 +138,26 @@ export function ScanDetails() {
                     className="btn btn-small"
                     aria-label="Go to previous page"
                   >
-                    Previous
+                    <MdChevronLeft size={20} />
                   </button>
 
                   <div className="page-numbers" role="group" aria-label="Page numbers">
                     {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                       const startPage = Math.max(1, currentPage - 2);
                       return startPage + i;
-                    }).map((page) => (
-                      <button
-                        key={page}
-                        onClick={() => goToPage(page)}
-                        className={`btn ${currentPage === page ? 'btn-active' : 'btn-small'}`}
-                        aria-current={currentPage === page ? 'page' : undefined}
-                        aria-label={`Page ${page}`}
-                      >
-                        {page}
-                      </button>
-                    ))}
+                    })
+                      .filter((page) => page <= totalPages)
+                      .map((page) => (
+                        <button
+                          key={page}
+                          onClick={() => goToPage(page)}
+                          className={`btn ${currentPage === page ? 'btn-active' : 'btn-small'}`}
+                          aria-current={currentPage === page ? 'page' : undefined}
+                          aria-label={`Page ${page}`}
+                        >
+                          {page}
+                        </button>
+                      ))}
                   </div>
 
                   <button
@@ -163,7 +166,7 @@ export function ScanDetails() {
                     className="btn btn-small"
                     aria-label="Go to next page"
                   >
-                    Next
+                    <MdChevronRight size={20} />
                   </button>
                   <button
                     onClick={goToLast}
@@ -171,7 +174,7 @@ export function ScanDetails() {
                     className="btn btn-small"
                     aria-label="Go to last page"
                   >
-                    Last
+                    <MdLastPage size={20} />
                   </button>
                 </nav>
               )}

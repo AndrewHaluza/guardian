@@ -249,6 +249,142 @@ export function createStreamPipeline(jsonFile: string, minSeverity: string = 'CR
 }
 
 // ---------------------------------------------------------------------------
+// Batch streaming pipeline: parse trivy JSON, filter by severity, batch insert
+// Reduces memory footprint from O(n) to O(batch_size)
+// ---------------------------------------------------------------------------
+
+export function createStreamPipelineWithBatching(
+  jsonFile: string,
+  minSeverity: string = 'CRITICAL',
+  repository: ScanRepository,
+  scanId: string,
+  batchSize: number = 100
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const maxFindings = getMaxFindings();
+    let findingCount = 0;
+    let batchCount = 0;
+    let aborted = false;
+    let totalVulnerabilities = 0;
+    const severityCounts: Record<string, number> = {};
+    let currentBatch: Vulnerability[] = [];
+
+    logger.info(`[BatchPipeline] Starting with batch size: ${batchSize}, min severity: ${minSeverity}`);
+
+    const pipeline = chain([
+      fs.createReadStream(jsonFile),
+      parser(),
+      pick({ filter: 'Results' }),
+      streamArray(),
+    ]);
+
+    async function flushBatch(): Promise<void> {
+      if (currentBatch.length === 0) return;
+
+      try {
+        batchCount++;
+        const batchLen = currentBatch.length;
+        await repository.appendResults(scanId, currentBatch);
+        logger.info(
+          `[BatchPipeline] Flushed batch ${batchCount} with ${batchLen} items (total findings: ${findingCount})`
+        );
+        currentBatch = [];
+      } catch (err) {
+        logger.error(`[BatchPipeline] Failed to flush batch ${batchCount}`, err);
+        throw err;
+      }
+    }
+
+    pipeline.on('data', async (data: { key: number; value: unknown }) => {
+      if (aborted) return;
+
+      // Pause stream while we process batch (backpressure)
+      pipeline.pause();
+
+      try {
+        const result = data.value as Record<string, unknown> | null | undefined;
+        const vulnerabilities = result?.Vulnerabilities;
+
+        logger.debug(`[BatchPipeline] Processing result index ${data.key}`);
+
+        if (vulnerabilities === null || vulnerabilities === undefined) {
+          pipeline.resume();
+          return;
+        }
+
+        if (Array.isArray(vulnerabilities)) {
+          for (const vuln of vulnerabilities as Vulnerability[]) {
+            totalVulnerabilities++;
+            const severity = vuln.Severity || 'UNKNOWN';
+            severityCounts[severity] = (severityCounts[severity] || 0) + 1;
+
+            if (shouldIncludeVulnerability(vuln, minSeverity)) {
+              currentBatch.push(vuln);
+              findingCount++;
+
+              // Flush batch if it reaches size limit
+              if (currentBatch.length >= batchSize) {
+                await flushBatch();
+              }
+
+              // Check if we've exceeded max findings
+              if (findingCount >= maxFindings) {
+                aborted = true;
+                pipeline.destroy();
+                await flushBatch(); // Flush remaining before rejecting
+                logger.error(
+                  `[BatchPipeline] Aborting: exceeded maximum of ${maxFindings} findings`
+                );
+                reject(
+                  new Error(
+                    `Scan aborted: exceeded maximum of ${maxFindings} findings with min severity ${minSeverity}`
+                  )
+                );
+                return;
+              }
+            }
+          }
+        }
+
+        pipeline.resume();
+      } catch (err) {
+        aborted = true;
+        pipeline.destroy();
+        reject(err);
+      }
+    });
+
+    pipeline.on('end', async () => {
+      if (aborted) return;
+
+      try {
+        // Flush final batch
+        await flushBatch();
+
+        logger.info(`[BatchPipeline] Stream ended. Summary:`, {
+          totalVulnerabilities,
+          severityCounts,
+          findingCount,
+          batchCount,
+          minSeverity,
+        });
+
+        resolve();
+      } catch (err) {
+        logger.error(`[BatchPipeline] Failed to flush final batch`, err);
+        reject(err);
+      }
+    });
+
+    pipeline.on('error', (err: Error) => {
+      logger.error(`[BatchPipeline] Stream error`, err);
+      if (aborted) return;
+      reject(err);
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Main scan orchestration
 // ---------------------------------------------------------------------------
 
@@ -312,21 +448,25 @@ async function runScan(scanId: string, repoUrl: string): Promise<void> {
       return;
     }
 
-    // Stream-json pipeline: parse results, filter by configured severity
-    logger.info(`[Worker] Starting JSON pipeline to parse results`);
+    // Batch streaming pipeline: parse results, filter by severity, batch insert to DB
+    logger.info(`[Worker] Starting batch streaming pipeline to parse results`);
     try {
       const minSeverity = getMinimumSeverity();
-      const filteredFindings = await createStreamPipeline(trivyOutputFile, minSeverity);
-      logger.info(`[Worker] Pipeline completed, found ${filteredFindings.length} vulnerabilities with min severity ${minSeverity}`);
-
-      logger.info(`[Worker] Appending results to database`);
-      await repository.appendResults(scanId, filteredFindings);
+      const BATCH_SIZE = 100;
+      await createStreamPipelineWithBatching(
+        trivyOutputFile,
+        minSeverity,
+        repository,
+        scanId,
+        BATCH_SIZE
+      );
+      logger.info(`[Worker] Batch streaming pipeline completed`);
 
       logger.info(`[Worker] Marking scan as completed`);
       await repository.updateStatus(scanId, { status: 'completed' });
       logger.info(`[Worker] Scan completed successfully`);
     } catch (err) {
-      logger.error(`[Worker] Pipeline failed: ${(err as Error).message}`);
+      logger.error(`[Worker] Batch pipeline failed: ${(err as Error).message}`);
       await repository.updateStatus(scanId, {
         status: 'failed',
         errorMessage: (err as Error).message,

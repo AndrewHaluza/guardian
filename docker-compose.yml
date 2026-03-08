@@ -31,14 +31,15 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NODE_ENV: develop
+      NODE_ENV: development
       GUARDIAN_MONGODB_URI: mongodb://mongodb:27017/guardian
       # Configure for memory-constrained environment
-      GUARDIAN_MAX_CONCURRENT_SCANS: 3
+      GUARDIAN_MAX_CONCURRENT_SCANS: 6
       GUARDIAN_MIN_FREE_DISK_SPACE: 256
       GUARDIAN_RATE_LIMIT_POST_SCAN: 5
       GUARDIAN_TRIVY_TIMEOUT: 300000
       GUARDIAN_GIT_TIMEOUT: 120000
+      GUARDIAN_MIN_SEVERITY: UNKNOWN
     # Memory limit as per task requirements: 200m
     # Leaves ~50m for OS/system overhead with Node.js --max-old-space-size=150
     mem_limit: 200m
