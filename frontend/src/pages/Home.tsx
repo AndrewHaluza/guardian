@@ -7,10 +7,12 @@ import {
   StartScanVariables,
 } from '../graphql/types';
 import { useGraphQLError } from '../hooks/useGraphQLError';
+import { validateRepoUrl } from '../utils/validation';
 import '../App.css';
 
 export function Home() {
   const [repoUrl, setRepoUrl] = useState('');
+  const [validationError, setValidationError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { error, handleError, clearError } = useGraphQLError();
 
@@ -28,12 +30,28 @@ export function Home() {
 
   const handleStartScan = () => {
     clearError();
+    setValidationError(null);
+
+    const urlError = validateRepoUrl(repoUrl);
+    if (urlError) {
+      setValidationError(urlError);
+      return;
+    }
+
     startScan({ variables: { repoUrl } });
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && repoUrl && !loading) {
       handleStartScan();
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setRepoUrl(e.target.value);
+    // Clear validation error when user starts typing, allow re-validation on submit
+    if (validationError) {
+      setValidationError(null);
     }
   };
 
@@ -52,17 +70,17 @@ export function Home() {
           id="repo-url"
           type="url"
           value={repoUrl}
-          onChange={(e) => setRepoUrl(e.target.value)}
-          onKeyPress={handleKeyPress}
+          onChange={handleInputChange}
+          onKeyDown={handleKeyDown}
           placeholder="Enter repository URL (https://...)"
           className="input"
           disabled={loading}
           aria-label="Repository URL"
-          aria-describedby={error ? 'error-message' : undefined}
+          aria-describedby={validationError ? 'validation-error' : error ? 'graphql-error' : undefined}
         />
         <button
           onClick={handleStartScan}
-          disabled={!repoUrl || loading}
+          disabled={!repoUrl || loading || !!validationError}
           className="btn btn-primary"
           aria-busy={loading}
         >
@@ -70,8 +88,14 @@ export function Home() {
         </button>
       </div>
 
+      {validationError && (
+        <div id="validation-error" className="error-message" role="alert">
+          {validationError}
+        </div>
+      )}
+
       {error && (
-        <div id="error-message" className="error-message" role="alert">
+        <div id="graphql-error" className="error-message" role="alert">
           {error}
         </div>
       )}

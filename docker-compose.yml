@@ -1,0 +1,92 @@
+services:
+  # Guardian frontend service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:3000
+    container_name: guardian-frontend
+    ports:
+      - "5174:5173"
+    depends_on:
+      guardian-server:
+        condition: service_healthy
+    restart: on-failure:3
+    networks:
+      - guardian-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5173"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # Guardian backend service
+  guardian-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: guardian-server
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: develop
+      GUARDIAN_MONGODB_URI: mongodb://mongodb:27017/guardian
+      # Configure for memory-constrained environment
+      GUARDIAN_MAX_CONCURRENT_SCANS: 3
+      GUARDIAN_MIN_FREE_DISK_SPACE: 256
+      GUARDIAN_RATE_LIMIT_POST_SCAN: 5
+      GUARDIAN_TRIVY_TIMEOUT: 300000
+      GUARDIAN_GIT_TIMEOUT: 120000
+    # Memory limit as per task requirements: 200m
+    # Leaves ~50m for OS/system overhead with Node.js --max-old-space-size=150
+    mem_limit: 200m
+    cpus: '1'
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: on-failure:3
+    networks:
+      - guardian-network
+    volumes:
+      # Temporary directory for git clones and Trivy output
+      - guardian-temp:/tmp/guardian-scans
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # MongoDB service
+  mongodb:
+    image: mongo:latest
+    container_name: guardian-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: guardian
+    # Keep MongoDB unconstrained for stability (adjust as needed)
+    mem_limit: 512m
+    restart: on-failure:3
+    networks:
+      - guardian-network
+    volumes:
+      - mongodb-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  mongodb-data:
+    driver: local
+  guardian-temp:
+    driver: local
+
+networks:
+  guardian-network:
+    driver: bridge

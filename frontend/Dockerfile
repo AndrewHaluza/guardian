@@ -15,18 +15,19 @@ RUN npm ci
 
 # Copy source code
 COPY src ./src
-COPY public ./public 2>/dev/null || true
 
 # Build React app with Vite
-RUN npm run build
+# Use build args for API configuration
+ARG VITE_API_BASE_URL=http://localhost:3000
+RUN VITE_API_BASE_URL=${VITE_API_BASE_URL} npm run build
 
-# Runtime stage - serve with simple HTTP server
+# Runtime stage - serve with serve (SPA-aware HTTP server)
 FROM node:22-alpine
 
 WORKDIR /app
 
-# Install http-server for serving static files
-RUN npm install -g http-server
+# Install serve for serving SPA with proper routing
+RUN npm install -g serve
 
 # Copy built app from builder
 COPY --from=builder /app/dist ./dist
@@ -38,6 +39,6 @@ EXPOSE 5173
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD wget --quiet --tries=1 --spider http://localhost:5173 || exit 1
 
-# Serve the app
-# Use http-server to serve the dist folder on port 5173
-CMD ["http-server", "dist", "-p", "5173", "--cors"]
+# Serve the app with SPA mode (-s flag)
+# This serves index.html for all routes, enabling client-side routing
+CMD ["serve", "-s", "dist", "-l", "5173"]

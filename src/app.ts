@@ -1,4 +1,3 @@
-import cors from 'cors';
 import express, { Request, Response } from 'express';
 import { createServer } from 'http';
 import { ApolloServer } from '@apollo/server';
@@ -10,6 +9,7 @@ import { typeDefs } from './graphql/schema';
 import { createResolvers } from './graphql/resolvers';
 import { pubsub } from './graphql/pubsub';
 import { wirePoolEventsToPubSub } from './graphql/event-bridge';
+import { createCorsMiddleware } from './middleware/cors';
 
 export interface AppWithPool {
   app: express.Application;
@@ -21,13 +21,7 @@ export async function createApp(): Promise<AppWithPool> {
   const app = express();
 
   // CORS middleware: allow frontend requests from development and production
-  app.use(cors({
-    origin: process.env.NODE_ENV === 'production'
-      ? ['https://yourdomain.com']
-      : ['http://localhost:5173', 'http://localhost:3000'],
-    methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-    credentials: true,
-  }));
+  app.use(createCorsMiddleware());
 
   // Mount the Guardian router at /api and get service for GraphQL
   const { router, pool, service } = await createGuardianRouter();

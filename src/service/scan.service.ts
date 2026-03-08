@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ScanRepository } from '../repository/scan.repository';
 import { ScanDocument } from '../types';
 import { IScanPool } from '../worker/scan.pool';
+import { validateRepoUrl } from '../utils/validation';
 
 export class ScanService {
   private repository: ScanRepository;
@@ -13,6 +14,9 @@ export class ScanService {
   }
 
   async startScan(repoUrl: string): Promise<string | null> {
+    // Validate repository URL before processing
+    validateRepoUrl(repoUrl);
+
     // Enforce concurrent scan limit before allocating any resources
     if (this.pool.isAtCapacity()) {
       return null;
