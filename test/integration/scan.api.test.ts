@@ -40,6 +40,7 @@ async function buildTestApp(mongoUri: string, pool: IScanPool): Promise<{
   app: express.Application;
   service: ScanService;
   pool: IScanPool;
+  client: MongoClient;
 }> {
   const client = new MongoClient(mongoUri);
   await client.connect();
@@ -56,7 +57,13 @@ async function buildTestApp(mongoUri: string, pool: IScanPool): Promise<{
   app.use(express.json());
   app.use('/api', router);
 
-  return { app, service, pool };
+  // Express 5 error middleware: satisfies 4-argument requirement and prevents
+  // requests from hanging due to unhandled async errors closing the connection
+  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    res.status(500).json({ error: err.message });
+  });
+
+  return { app, service, pool, client };
 }
 
 // ---------------------------------------------------------------------------
@@ -68,6 +75,7 @@ describe('Guardian API Integration', function () {
   this.timeout(60_000);
 
   let mongoServer: MongoMemoryServer;
+  let mongoClient: MongoClient;
   let app: express.Application;
   let service: ScanService;
   let pool: IScanPool;
@@ -81,10 +89,12 @@ describe('Guardian API Integration', function () {
     const built = await buildTestApp(uri, pool);
     app = built.app;
     service = built.service;
+    mongoClient = built.client;
     request = supertest(app);
   });
 
   after(async () => {
+    await mongoClient.close();
     await mongoServer.stop();
   });
 

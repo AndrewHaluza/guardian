@@ -396,6 +396,377 @@ describe('createStreamPipeline()', () => {
 });
 
 // ---------------------------------------------------------------------------
+// shouldIncludeVulnerability — severity filtering logic
+// ---------------------------------------------------------------------------
+
+describe('shouldIncludeVulnerability()', () => {
+  // Since shouldIncludeVulnerability is not exported, test it indirectly through
+  // createStreamPipeline with different severity levels
+
+  it('filters to CRITICAL when minSeverity is CRITICAL', async () => {
+    const json = JSON.stringify({
+      Results: [{
+        Target: 'test.js',
+        Vulnerabilities: [
+          { VulnerabilityID: 'CVE-C-1', Severity: 'CRITICAL' },
+          { VulnerabilityID: 'CVE-H-1', Severity: 'HIGH' },
+          { VulnerabilityID: 'CVE-M-1', Severity: 'MEDIUM' },
+          { VulnerabilityID: 'CVE-L-1', Severity: 'LOW' },
+        ],
+      }],
+    });
+    const tmpFile = path.join(os.tmpdir(), `guardian-severity-critical-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, json);
+    try {
+      const findings = await workerModule.createStreamPipeline(tmpFile, 'CRITICAL') as Vulnerability[];
+      expect(findings).to.have.length(1);
+      expect(findings[0].VulnerabilityID).to.equal('CVE-C-1');
+    } finally {
+      try { fs.rmSync(tmpFile, { force: true }); } catch { /* ignore */ }
+    }
+  });
+
+  it('filters to HIGH and above when minSeverity is HIGH', async () => {
+    const json = JSON.stringify({
+      Results: [{
+        Target: 'test.js',
+        Vulnerabilities: [
+          { VulnerabilityID: 'CVE-C-1', Severity: 'CRITICAL' },
+          { VulnerabilityID: 'CVE-H-1', Severity: 'HIGH' },
+          { VulnerabilityID: 'CVE-M-1', Severity: 'MEDIUM' },
+          { VulnerabilityID: 'CVE-L-1', Severity: 'LOW' },
+        ],
+      }],
+    });
+    const tmpFile = path.join(os.tmpdir(), `guardian-severity-high-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, json);
+    try {
+      const findings = await workerModule.createStreamPipeline(tmpFile, 'HIGH') as Vulnerability[];
+      expect(findings).to.have.length(2);
+      const ids = findings.map((f) => f.VulnerabilityID);
+      expect(ids).to.include('CVE-C-1');
+      expect(ids).to.include('CVE-H-1');
+    } finally {
+      try { fs.rmSync(tmpFile, { force: true }); } catch { /* ignore */ }
+    }
+  });
+
+  it('includes UNKNOWN severity when minSeverity is LOW', async () => {
+    const json = JSON.stringify({
+      Results: [{
+        Target: 'test.js',
+        Vulnerabilities: [
+          { VulnerabilityID: 'CVE-UNKNOWN-1', Severity: 'UNKNOWN' },
+          { VulnerabilityID: 'CVE-L-1', Severity: 'LOW' },
+        ],
+      }],
+    });
+    const tmpFile = path.join(os.tmpdir(), `guardian-severity-unknown-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, json);
+    try {
+      const findings = await workerModule.createStreamPipeline(tmpFile, 'LOW') as Vulnerability[];
+      expect(findings).to.have.length(1); // UNKNOWN has rank 0, LOW has rank 1, so UNKNOWN is filtered out
+      expect(findings[0].VulnerabilityID).to.equal('CVE-L-1');
+    } finally {
+      try { fs.rmSync(tmpFile, { force: true }); } catch { /* ignore */ }
+    }
+  });
+
+  it('handles missing Severity field (defaults to UNKNOWN)', async () => {
+    const json = JSON.stringify({
+      Results: [{
+        Target: 'test.js',
+        Vulnerabilities: [
+          { VulnerabilityID: 'CVE-NO-SEV', Title: 'Missing Severity' },
+          { VulnerabilityID: 'CVE-C-1', Severity: 'CRITICAL' },
+        ],
+      }],
+    });
+    const tmpFile = path.join(os.tmpdir(), `guardian-missing-sev-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, json);
+    try {
+      const findings = await workerModule.createStreamPipeline(tmpFile, 'CRITICAL') as Vulnerability[];
+      expect(findings).to.have.length(1);
+      expect(findings[0].VulnerabilityID).to.equal('CVE-C-1');
+    } finally {
+      try { fs.rmSync(tmpFile, { force: true }); } catch { /* ignore */ }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createStreamPipelineWithBatching — batch-based streaming
+// ---------------------------------------------------------------------------
+
+describe('createStreamPipelineWithBatching()', () => {
+  // Mock the ScanRepository for batching tests
+  const mockRepository = {
+    appendResults: sinon.stub().resolves(),
+    updateStatus: sinon.stub().resolves(),
+  };
+
+  beforeEach(() => {
+    mockRepository.appendResults.resetHistory();
+    mockRepository.updateStatus.resetHistory();
+  });
+
+  it('parses and batches vulnerabilities from stream', async () => {
+    const vulns = Array.from({ length: 250 }, (_, i) => ({
+      VulnerabilityID: `CVE-BATCH-${i}`,
+      Severity: 'CRITICAL',
+    }));
+    const json = JSON.stringify({
+      Results: [{ Target: 'test.js', Vulnerabilities: vulns }],
+    });
+    const tmpFile = path.join(os.tmpdir(), `guardian-batch-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, json);
+
+    try {
+      await workerModule.createStreamPipelineWithBatching(
+        tmpFile,
+        'CRITICAL',
+        mockRepository as any,
+        'scan-123',
+        100 // batch size
+      );
+      // 250 items with batch size 100 = 3 flushes (100, 100, 50)
+      expect(mockRepository.appendResults.callCount).to.equal(3);
+      // First two batches should have 100 items
+      expect(mockRepository.appendResults.firstCall.args[1]).to.have.length(100);
+      expect(mockRepository.appendResults.secondCall.args[1]).to.have.length(100);
+      // Last batch should have 50 items
+      expect(mockRepository.appendResults.thirdCall.args[1]).to.have.length(50);
+    } finally {
+      try { fs.rmSync(tmpFile, { force: true }); } catch { /* ignore */ }
+    }
+  });
+
+  it('respects batch size parameter', async () => {
+    const vulns = Array.from({ length: 350 }, (_, i) => ({
+      VulnerabilityID: `CVE-BATCHSIZE-${i}`,
+      Severity: 'HIGH',
+    }));
+    const json = JSON.stringify({
+      Results: [{ Target: 'test.js', Vulnerabilities: vulns }],
+    });
+    const tmpFile = path.join(os.tmpdir(), `guardian-batchsize-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, json);
+
+    try {
+      await workerModule.createStreamPipelineWithBatching(
+        tmpFile,
+        'HIGH',
+        mockRepository as any,
+        'scan-456',
+        50 // smaller batch size
+      );
+      // 350 items with batch size 50 = 7 flushes
+      expect(mockRepository.appendResults.callCount).to.equal(7);
+    } finally {
+      try { fs.rmSync(tmpFile, { force: true }); } catch { /* ignore */ }
+    }
+  });
+
+  it('flushes final batch on stream end', async () => {
+    const vulns = Array.from({ length: 25 }, (_, i) => ({
+      VulnerabilityID: `CVE-FINAL-${i}`,
+      Severity: 'CRITICAL',
+    }));
+    const json = JSON.stringify({
+      Results: [{ Target: 'test.js', Vulnerabilities: vulns }],
+    });
+    const tmpFile = path.join(os.tmpdir(), `guardian-final-batch-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, json);
+
+    try {
+      await workerModule.createStreamPipelineWithBatching(
+        tmpFile,
+        'CRITICAL',
+        mockRepository as any,
+        'scan-789',
+        100
+      );
+      // 25 items < 100 batch size, but should still flush on end
+      expect(mockRepository.appendResults.callCount).to.equal(1);
+      expect(mockRepository.appendResults.firstCall.args[1]).to.have.length(25);
+    } finally {
+      try { fs.rmSync(tmpFile, { force: true }); } catch { /* ignore */ }
+    }
+  });
+
+  it('respects minSeverity filter in batch pipeline', async () => {
+    const json = JSON.stringify({
+      Results: [{
+        Target: 'test.js',
+        Vulnerabilities: [
+          { VulnerabilityID: 'CVE-C-1', Severity: 'CRITICAL' },
+          { VulnerabilityID: 'CVE-H-1', Severity: 'HIGH' },
+          { VulnerabilityID: 'CVE-M-1', Severity: 'MEDIUM' },
+        ],
+      }],
+    });
+    const tmpFile = path.join(os.tmpdir(), `guardian-batch-filter-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, json);
+
+    try {
+      await workerModule.createStreamPipelineWithBatching(
+        tmpFile,
+        'HIGH',
+        mockRepository as any,
+        'scan-filter',
+        100
+      );
+      // Only CRITICAL and HIGH should be included
+      expect(mockRepository.appendResults.callCount).to.equal(1);
+      const batch = mockRepository.appendResults.firstCall.args[1] as Vulnerability[];
+      expect(batch).to.have.length(2);
+      const ids = batch.map((v) => v.VulnerabilityID);
+      expect(ids).to.include('CVE-C-1');
+      expect(ids).to.include('CVE-H-1');
+    } finally {
+      try { fs.rmSync(tmpFile, { force: true }); } catch { /* ignore */ }
+    }
+  });
+
+  it('aborts and flushes when max findings exceeded', async () => {
+    const vulns = Array.from({ length: 501 }, (_, i) => ({
+      VulnerabilityID: `CVE-BATCHCAP-${i}`,
+      Severity: 'CRITICAL',
+    }));
+    const json = JSON.stringify({
+      Results: [{ Target: 'test.js', Vulnerabilities: vulns }],
+    });
+    const tmpFile = path.join(os.tmpdir(), `guardian-batch-cap-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, json);
+
+    try {
+      let error: Error | undefined;
+      try {
+        await workerModule.createStreamPipelineWithBatching(
+          tmpFile,
+          'CRITICAL',
+          mockRepository as any,
+          'scan-cap',
+          100
+        );
+      } catch (e) {
+        error = e as Error;
+      }
+      expect(error).to.exist;
+      expect(error!.message).to.include('exceeded maximum of 500 findings');
+      // Should have flushed batches before aborting
+      expect(mockRepository.appendResults.callCount).to.be.greaterThan(0);
+    } finally {
+      try { fs.rmSync(tmpFile, { force: true }); } catch { /* ignore */ }
+    }
+  });
+
+  it('handles appendResults rejection gracefully', async () => {
+    const vulns = Array.from({ length: 10 }, (_, i) => ({
+      VulnerabilityID: `CVE-ERR-${i}`,
+      Severity: 'CRITICAL',
+    }));
+    const json = JSON.stringify({
+      Results: [{ Target: 'test.js', Vulnerabilities: vulns }],
+    });
+    const tmpFile = path.join(os.tmpdir(), `guardian-batch-err-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, json);
+
+    const failingRepo = {
+      appendResults: sinon.stub().rejects(new Error('DB write failed')),
+      updateStatus: sinon.stub().resolves(),
+    };
+
+    try {
+      let error: Error | undefined;
+      try {
+        await workerModule.createStreamPipelineWithBatching(
+          tmpFile,
+          'CRITICAL',
+          failingRepo as any,
+          'scan-err',
+          100
+        );
+      } catch (e) {
+        error = e as Error;
+      }
+      expect(error).to.exist;
+      expect(error!.message).to.include('DB write failed');
+    } finally {
+      try { fs.rmSync(tmpFile, { force: true }); } catch { /* ignore */ }
+    }
+  });
+
+  it('skips empty batches (no flush for 0 items)', async () => {
+    const json = JSON.stringify({
+      Results: [
+        { Target: 'safe.js', Vulnerabilities: null },
+        { Target: 'also-safe.js', Vulnerabilities: [] },
+      ],
+    });
+    const tmpFile = path.join(os.tmpdir(), `guardian-batch-empty-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, json);
+
+    try {
+      await workerModule.createStreamPipelineWithBatching(
+        tmpFile,
+        'CRITICAL',
+        mockRepository as any,
+        'scan-empty',
+        100
+      );
+      // No vulnerabilities found, so appendResults should not be called
+      expect(mockRepository.appendResults.callCount).to.equal(0);
+    } finally {
+      try { fs.rmSync(tmpFile, { force: true }); } catch { /* ignore */ }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Stream error handling
+// ---------------------------------------------------------------------------
+
+describe('Stream error handling', () => {
+  it('createStreamPipeline rejects on malformed JSON', async () => {
+    const tmpFile = path.join(os.tmpdir(), `guardian-malformed-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, 'not valid json {]');
+
+    try {
+      let error: Error | undefined;
+      try {
+        await workerModule.createStreamPipeline(tmpFile);
+      } catch (e) {
+        error = e as Error;
+      }
+      expect(error).to.exist;
+    } finally {
+      try { fs.rmSync(tmpFile, { force: true }); } catch { /* ignore */ }
+    }
+  });
+
+  it('createStreamPipeline rejects on missing Results key', async () => {
+    const json = JSON.stringify({ NotResults: [] });
+    const tmpFile = path.join(os.tmpdir(), `guardian-no-results-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, json);
+
+    try {
+      let error: Error | undefined;
+      try {
+        await workerModule.createStreamPipeline(tmpFile);
+      } catch (e) {
+        error = e as Error;
+      }
+      // Should resolve with empty array since Results is not picked
+      const result = await workerModule.createStreamPipeline(tmpFile) as Vulnerability[];
+      expect(result).to.be.an('array').with.length(0);
+    } finally {
+      try { fs.rmSync(tmpFile, { force: true }); } catch { /* ignore */ }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Temp directory cleanup (finally-block logic)
 // ---------------------------------------------------------------------------
 

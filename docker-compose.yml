@@ -39,7 +39,7 @@ services:
       GUARDIAN_RATE_LIMIT_POST_SCAN: 5
       GUARDIAN_TRIVY_TIMEOUT: 300000
       GUARDIAN_GIT_TIMEOUT: 120000
-      GUARDIAN_MIN_SEVERITY: UNKNOWN
+      GUARDIAN_MIN_SEVERITY: CRITICAL
     # Memory limit as per task requirements: 200m
     # Leaves ~50m for OS/system overhead with Node.js --max-old-space-size=150
     mem_limit: 200m

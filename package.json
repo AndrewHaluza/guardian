@@ -13,6 +13,7 @@
     "test": "mocha --require ts-node/register --timeout 30000 'test/**/*.ts' --grep '^(?!.*E2E)'",
     "test:e2e": "RUN_E2E=1 mocha --require ts-node/register --timeout 60000 test/stress/memory.stress.test.ts",
     "test:all": "npm run build && npm test && npm run test:e2e",
+    "coverage": "nyc --reporter=html --reporter=text --exclude 'test/**' --exclude 'dist/**' mocha --require ts-node/register --timeout 30000 'test/**/*.ts' --grep '^(?!.*E2E)'",
     "start": "node dist/index.js",
     "start:with-limit": "NODE_OPTIONS=\"--max-old-space-size=256\" npm start"
   },
@@ -50,6 +51,7 @@
     "chai": "^4.3.0",
     "mocha": "^11.7.5",
     "mongodb-memory-server": "^11.0.1",
+    "nyc": "^18.0.0",
     "sinon": "^17.0.0",
     "supertest": "^7.2.2",
     "ts-node": "^10.9.0"

@@ -296,6 +296,51 @@ describe('OOM Self-Test — Memory Constraint Validation', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Task 6.4b: Production-scale stress test — 500MB+ JSON (1.25M vulns)
+  // -------------------------------------------------------------------------
+
+  it('should parse 500MB+ file (5.7M vulns) without OOM', async function () {
+    this.timeout(600_000); // 10 minutes: file write + parse is slow for 500MB+
+
+    console.log('  Generating 500MB+ synthetic Trivy output (5.7M vulnerabilities)...');
+    const startGenerate = Date.now();
+    const fixture = generateSyntheticTrivy(5_700_000, 200); // 200 CRITICAL out of 5.7M (~500MB JSON)
+    const generateTime = Date.now() - startGenerate;
+    console.log(`  Fixture generated in ${generateTime}ms (${(fixture.length / 1024 / 1024).toFixed(1)} MB)`);
+
+    console.log('  Writing fixture to disk...');
+    const startWrite = Date.now();
+    const tempFile = writeTempFixture(fixture, '500mb');
+    const writeTime = Date.now() - startWrite;
+    const fileStats = fs.statSync(tempFile);
+    console.log(`  File written in ${writeTime}ms (${(fileStats.size / 1024 / 1024).toFixed(1)} MB)`);
+
+    const monitor = new HeapMonitor();
+    monitor.start();
+
+    console.log('  Parsing 500MB+ file via stream-json...');
+    const startParse = Date.now();
+    let criticalFindings: object[];
+    try {
+      criticalFindings = await workerModule.createStreamPipeline(tempFile);
+    } finally {
+      cleanTempFile(tempFile);
+    }
+    const parseTime = Date.now() - startParse;
+
+    const heapStats = monitor.stop();
+
+    expect(criticalFindings).to.have.lengthOf(200);
+    expect(heapStats.peak).to.be.lessThan(MAX_HEAP_BYTES);
+    expect(heapStats.exceeded).to.be.false;
+
+    console.log(`  Parse completed in ${parseTime}ms (${(parseTime / 1000).toFixed(1)}s)`);
+    console.log(`  Peak heap (500MB+ file): ${(heapStats.peak / 1024 / 1024).toFixed(2)} MB`);
+    console.log(`  Heap samples collected: ${heapStats.samples}`);
+    console.log(`  Processing rate: ${((fileStats.size / 1024 / 1024) / (parseTime / 1000)).toFixed(2)} MB/s`);
+  });
+
+  // -------------------------------------------------------------------------
   // Task 6.5: Concurrent stress test — 5 workers, 20K vulns each
   // -------------------------------------------------------------------------
 
