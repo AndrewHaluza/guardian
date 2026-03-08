@@ -1,0 +1,430 @@
+openapi: 3.0.0
+info:
+  title: Code Guardian API
+  description: High-performance security scanning service for Git repositories
+  version: 1.0.0
+  contact:
+    name: Code Guardian
+  license:
+    name: Apache 2.0
+
+servers:
+  - url: http://localhost:3000/api
+    description: Local development server
+  - url: https://api.example.com/api
+    description: Production server
+
+paths:
+  /health:
+    get:
+      summary: Health check for Kubernetes probes
+      description: |
+        Returns the health status of the service and database connectivity.
+        Used by Kubernetes liveness and readiness probes.
+      operationId: getHealth
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy and database is connected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy]
+                  timestamp:
+                    type: string
+                    format: date-time
+                    description: ISO 8601 timestamp
+                  uptime_seconds:
+                    type: integer
+                    description: Process uptime in seconds
+                  check_duration_ms:
+                    type: integer
+                    description: Duration of health check in milliseconds
+                required:
+                  - status
+                  - timestamp
+                  - uptime_seconds
+                  - check_duration_ms
+              example:
+                status: healthy
+                timestamp: "2026-03-07T19:06:00.123Z"
+                uptime_seconds: 3600
+                check_duration_ms: 5
+
+        '503':
+          description: Service is unhealthy (database unreachable)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [unhealthy]
+                  error:
+                    type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+                required:
+                  - status
+                  - error
+                  - timestamp
+              example:
+                status: unhealthy
+                error: Database connection failed
+                timestamp: "2026-03-07T19:06:00.123Z"
+
+  /scan:
+    post:
+      summary: Start a new security scan
+      description: |
+        Submit a GitHub repository for asynchronous security scanning.
+        Returns immediately (HTTP 202) without waiting for scan completion.
+      operationId: startScan
+      tags:
+        - Scans
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                repoUrl:
+                  type: string
+                  format: url
+                  description: HTTPS URL to GitHub repository
+                  example: https://github.com/owner/repository
+              required:
+                - repoUrl
+      responses:
+        '202':
+          description: Scan accepted and queued for processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scanId:
+                    type: string
+                    format: uuid
+                    description: Unique scan identifier (UUID v4)
+                  status:
+                    type: string
+                    enum: [queued]
+                required:
+                  - scanId
+                  - status
+              example:
+                scanId: 550e8400-e29b-41d4-a716-446655440000
+                status: queued
+
+        '400':
+          description: Invalid request (missing/invalid repoUrl)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    description: Error message explaining validation failure
+              examples:
+                missing_url:
+                  value:
+                    error: "repoUrl is required and must be a non-empty string"
+                not_https:
+                  value:
+                    error: "repoUrl must be an HTTPS URL"
+                too_long:
+                  value:
+                    error: "repoUrl must not exceed 2048 characters"
+
+        '429':
+          description: Server at maximum concurrent scans
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+              example:
+                error: "Server is at maximum concurrent scans (3). Please try again later."
+
+        '500':
+          description: Internal server error (database error)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+              example:
+                error: "Internal server error"
+
+  /scan/{scanId}:
+    get:
+      summary: Get scan status and results
+      description: |
+        Retrieve the current status and results of a submitted scan.
+        The response format varies based on the scan status (queued, scanning, completed, failed).
+      operationId: getScan
+      tags:
+        - Scans
+      parameters:
+        - name: scanId
+          in: path
+          required: true
+          description: UUID v4 scan identifier
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Scan status retrieved successfully
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ScanQueuedResponse'
+                  - $ref: '#/components/schemas/ScanScanningResponse'
+                  - $ref: '#/components/schemas/ScanCompletedResponse'
+                  - $ref: '#/components/schemas/ScanFailedResponse'
+              examples:
+                queued:
+                  value:
+                    scanId: 550e8400-e29b-41d4-a716-446655440000
+                    status: queued
+                scanning:
+                  value:
+                    scanId: 550e8400-e29b-41d4-a716-446655440000
+                    status: scanning
+                completed:
+                  value:
+                    scanId: 550e8400-e29b-41d4-a716-446655440000
+                    status: completed
+                    results:
+                      - severity: CRITICAL
+                        vulnerabilityId: CVE-2023-12345
+                        title: Remote Code Execution in dependency-name
+                        description: A vulnerability in the dependency...
+                failed:
+                  value:
+                    scanId: 550e8400-e29b-41d4-a716-446655440000
+                    status: failed
+                    errorMessage: "Git clone failed: Repository not found"
+
+        '400':
+          description: Invalid scan ID format
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+              example:
+                error: "Invalid scanId format. Must be UUID v4."
+
+        '404':
+          description: Scan not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+              example:
+                error: "Scan not found"
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+              example:
+                error: "Internal server error"
+
+    delete:
+      summary: Delete a scan
+      description: |
+        Delete a scan document from the database.
+        The scan can be in any status (queued, scanning, completed, or failed).
+      operationId: deleteScan
+      tags:
+        - Scans
+      parameters:
+        - name: scanId
+          in: path
+          required: true
+          description: UUID v4 scan identifier
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Scan deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+              example:
+                message: "Scan deleted successfully"
+
+        '400':
+          description: Invalid scan ID format
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+              example:
+                error: "Invalid scanId format. Must be UUID v4."
+
+        '404':
+          description: Scan not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+              example:
+                error: "Scan not found"
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+              example:
+                error: "Internal server error"
+
+components:
+  schemas:
+    Vulnerability:
+      type: object
+      description: |
+        A security vulnerability discovered by Trivy.
+        The interface includes typed fields for common Trivy fields while allowing
+        additional fields for forward compatibility with Trivy schema variations.
+      properties:
+        severity:
+          type: string
+          enum: [CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN]
+          description: Severity level of the vulnerability
+        vulnerabilityId:
+          type: string
+          description: CVE ID or other vulnerability identifier (e.g., CVE-2023-12345)
+        title:
+          type: string
+          description: Short title of the vulnerability
+        description:
+          type: string
+          description: Detailed description of the vulnerability
+        packageName:
+          type: string
+          description: Name of the vulnerable package
+        packageVersion:
+          type: string
+          description: Version of the vulnerable package
+        fixedVersion:
+          type: string
+          description: Available fixed version (if any)
+      required:
+        - severity
+
+    ScanQueuedResponse:
+      type: object
+      description: Scan status when queued for processing
+      properties:
+        scanId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued]
+      required:
+        - scanId
+        - status
+
+    ScanScanningResponse:
+      type: object
+      description: Scan status while scanning is in progress
+      properties:
+        scanId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [scanning]
+      required:
+        - scanId
+        - status
+
+    ScanCompletedResponse:
+      type: object
+      description: Scan status when completed successfully
+      properties:
+        scanId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [completed]
+        results:
+          type: array
+          description: Array of vulnerabilities found (up to 500 CRITICAL findings)
+          items:
+            $ref: '#/components/schemas/Vulnerability'
+      required:
+        - scanId
+        - status
+        - results
+
+    ScanFailedResponse:
+      type: object
+      description: Scan status when scanning failed
+      properties:
+        scanId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [failed]
+        errorMessage:
+          type: string
+          description: Reason why the scan failed
+      required:
+        - scanId
+        - status
+        - errorMessage
+
+tags:
+  - name: Health
+    description: Service health check endpoints
+  - name: Scans
+    description: Vulnerability scan management endpoints
