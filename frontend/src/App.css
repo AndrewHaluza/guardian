@@ -1,0 +1,442 @@
+:root {
+  --primary-color: #2563eb;
+  --success-color: #10b981;
+  --error-color: #ef4444;
+  --warning-color: #f59e0b;
+  --danger-color: #dc2626;
+  --bg-color: #f9fafb;
+  --text-color: #1f2937;
+  --border-color: #e5e7eb;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  line-height: 1.6;
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.header h1 {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--primary-color);
+}
+
+.header p {
+  font-size: 1.125rem;
+  color: #6b7280;
+}
+
+.scan-form {
+  background: white;
+  padding: 2rem;
+  border-radius: 0.5rem;
+  box-shadow: var(--shadow);
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.input {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  font-size: 1rem;
+  transition: border-color 0.2s;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.input:disabled {
+  background-color: #f3f4f6;
+  cursor: not-allowed;
+}
+
+.btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #1d4ed8;
+  box-shadow: var(--shadow);
+}
+
+.btn-primary:disabled {
+  background-color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background-color: #6b7280;
+  color: white;
+  margin-top: 1.5rem;
+  width: 100%;
+}
+
+.btn-secondary:hover {
+  background-color: #4b5563;
+  box-shadow: var(--shadow);
+}
+
+.back-button-container {
+  margin-bottom: 2rem;
+}
+
+.btn-back {
+  width: auto;
+  margin-top: 0;
+}
+
+.btn-small {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  background-color: #e5e7eb;
+  color: var(--text-color);
+  margin: 0 0.25rem;
+}
+
+.btn-small:hover:not(:disabled) {
+  background-color: #d1d5db;
+}
+
+.btn-small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-active {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.btn-active:hover {
+  background-color: #1d4ed8;
+}
+
+.scan-status {
+  display: flex;
+  justify-content: center;
+}
+
+.status-card {
+  background: white;
+  padding: 2rem;
+  border-radius: 0.5rem;
+  box-shadow: var(--shadow);
+  width: 100%;
+  max-width: 600px;
+}
+
+.status-card h2 {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  color: var(--primary-color);
+  word-break: break-all;
+}
+
+.status-text {
+  font-size: 1.125rem;
+  margin-bottom: 1.5rem;
+}
+
+.status-queued,
+.status-badge.status-queued {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.status-scanning,
+.status-badge.status-scanning {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.status-completed,
+.status-badge.status-completed {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.status-failed,
+.status-badge.status-failed {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-weight: 600;
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.scan-status-container {
+  margin-bottom: 1.5rem;
+}
+
+.spinner {
+  display: flex;
+  justify-content: center;
+  margin: 2rem 0;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  margin: 0 6px;
+  background-color: var(--primary-color);
+  border-radius: 50%;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.8);
+  }
+}
+
+.results {
+  margin: 2rem 0;
+}
+
+.results h3 {
+  font-size: 1.25rem;
+  margin-bottom: 1rem;
+  color: var(--text-color);
+}
+
+.vulnerability-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.vulnerability {
+  padding: 1rem;
+  border-left: 4px solid #ddd;
+  border-radius: 0.25rem;
+  background-color: #fafafa;
+}
+
+.vulnerability.critical {
+  border-left-color: var(--danger-color);
+  background-color: #fef2f2;
+}
+
+.vulnerability.high {
+  border-left-color: var(--error-color);
+  background-color: #fef2f2;
+}
+
+.vulnerability.medium {
+  border-left-color: var(--warning-color);
+  background-color: #fffbeb;
+}
+
+.vulnerability.low {
+  border-left-color: #3b82f6;
+  background-color: #eff6ff;
+}
+
+.vulnerability.unknown {
+  border-left-color: #9ca3af;
+  background-color: #f9fafb;
+}
+
+.vuln-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.severity {
+  font-weight: 600;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.vulnerability.critical .severity {
+  background-color: var(--danger-color);
+  color: white;
+}
+
+.vulnerability.high .severity {
+  background-color: var(--error-color);
+  color: white;
+}
+
+.vulnerability.medium .severity {
+  background-color: var(--warning-color);
+  color: white;
+}
+
+.vulnerability.low .severity {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.vulnerability.unknown .severity {
+  background-color: #9ca3af;
+  color: white;
+}
+
+.title {
+  flex: 1;
+  font-weight: 600;
+}
+
+.description {
+  color: #4b5563;
+  font-size: 0.875rem;
+  margin-bottom: 0.5rem;
+}
+
+.vuln-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.detail {
+  font-size: 0.8125rem;
+  color: #6b7280;
+  word-break: break-word;
+}
+
+.vulnerability.critical .detail,
+.vulnerability.high .detail {
+  color: #7f1d1d;
+}
+
+.vulnerability.medium .detail {
+  color: #92400e;
+}
+
+.vulnerability.low .detail,
+.vulnerability.unknown .detail {
+  color: #4b5563;
+}
+
+.pagination-info {
+  margin: 1.5rem 0 1rem 0;
+  font-size: 0.875rem;
+  color: #6b7280;
+  text-align: center;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.page-numbers {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.success-message {
+  padding: 1rem;
+  background-color: #ecfdf5;
+  border-left: 4px solid var(--success-color);
+  color: var(--success-color);
+  border-radius: 0.25rem;
+  font-weight: 500;
+  margin: 1.5rem 0;
+}
+
+.error-message {
+  padding: 1rem;
+  background-color: #fef2f2;
+  border-left: 4px solid var(--error-color);
+  color: var(--error-color);
+  border-radius: 0.25rem;
+  font-weight: 500;
+  margin-top: 1rem;
+}
+
+@media (max-width: 640px) {
+  .header h1 {
+    font-size: 1.875rem;
+  }
+
+  .scan-form {
+    flex-direction: column;
+  }
+
+  .btn {
+    width: 100%;
+  }
+
+  .status-card {
+    padding: 1.5rem;
+  }
+
+  .vulnerability-list {
+    gap: 0.75rem;
+  }
+
+  .vulnerability {
+    padding: 0.75rem;
+  }
+
+  .vuln-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+}

@@ -6,16 +6,16 @@ const logger = createLogger('Server');
 
 async function start() {
   try {
-    const { app, pool } = await createApp();
+    const { httpServer, pool } = await createApp();
     const port = getGuardianPort();
 
     // Start listening
-    const server = app.listen(port, () => {
+    httpServer.listen(port, () => {
       logger.info(`Guardian server listening on port ${port}`);
     });
 
     // HTTP server error handling
-    server.on('error', (error: NodeJS.ErrnoException) => {
+    httpServer.on('error', (error: NodeJS.ErrnoException) => {
       if (error.code === 'EADDRINUSE') {
         logger.error(`Port ${port} is already in use`);
       } else {
@@ -27,7 +27,7 @@ async function start() {
     // Graceful shutdown handler: closes HTTP server and worker pool
     const gracefulShutdown = async () => {
       logger.info('Shutdown signal received, shutting down gracefully...');
-      server.close(async () => {
+      httpServer.close(async () => {
         logger.info('Server closed');
         await pool.shutdown();
         logger.info('Worker pool shut down');

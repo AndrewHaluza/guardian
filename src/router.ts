@@ -15,6 +15,7 @@ const logger = createLogger('Guardian');
 export interface GuardianRouterResult {
   router: express.Router;
   pool: IScanPool;
+  service: ScanService;
 }
 
 export async function createGuardianRouter(): Promise<GuardianRouterResult> {
@@ -65,5 +66,5 @@ export async function createGuardianRouter(): Promise<GuardianRouterResult> {
   router.delete('/scan/:scanId', getScanLimiter, (req, res) => controller.deleteScan(req, res));
   router.get('/health', (req, res) => controller.getHealth(req, res));
 
-  return { router, pool };
+  return { router, pool, service };
 }

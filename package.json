@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "Code Guardian - high-performance security scanning backend service",
   "main": "dist/index.js",
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "build:watch": "tsc -p tsconfig.json --watch",
@@ -13,21 +17,31 @@
     "start:with-limit": "NODE_OPTIONS=\"--max-old-space-size=256\" npm start"
   },
   "dependencies": {
+    "@apollo/server": "^5.4.0",
+    "@graphql-tools/schema": "^10.0.31",
     "@types/node": "^20.x",
     "@types/stream-chain": "^2.1.0",
     "@types/stream-json": "^1.7.8",
+    "@types/ws": "^8.18.1",
+    "cors": "^2.8.6",
     "dotenv": "^16.4.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.3.0",
+    "graphql": "^16.13.1",
+    "graphql-subscriptions": "^3.0.0",
+    "graphql-tag": "^2.12.6",
+    "graphql-ws": "^6.0.7",
     "helmet": "^7.1.0",
     "mongodb": "^6",
     "stream-json": "^1.8.0",
     "typescript": "^5.x",
     "uuid": "^9.0.0",
-    "winston": "^3.11.0"
+    "winston": "^3.11.0",
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "@types/chai": "^4.3.0",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/mocha": "^10.0.0",
     "@types/sinon": "^21.0.0",

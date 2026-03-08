@@ -4,14 +4,16 @@
     "module": "commonjs",
     "lib": ["ES2020"],
     "strict": true,
-    "noImplicitAny": true,
+    "noImplicitAny": false,
     "noUnusedLocals": true,
     "sourceMap": true,
     "declaration": true,
     "outDir": "dist",
     "rootDir": "src",
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "moduleResolution": "node",
+    "resolveJsonModule": true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

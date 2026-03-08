@@ -1,5 +1,6 @@
 import path from 'path';
 import { Worker } from 'worker_threads';
+import { EventEmitter } from 'node:events';
 import { createLogger } from '../logger';
 import { WorkerMessage, WorkerScanMessage } from '../types';
 
@@ -21,7 +22,7 @@ interface PooledThread {
  * IScanPool defines the contract for a worker thread pool managing scan operations.
  * Implementations must handle queueing, thread pooling, and graceful shutdown.
  */
-export interface IScanPool {
+export interface IScanPool extends EventEmitter {
   /**
    * Returns true if the pool is at max capacity and the queue has reached maxQueueSize.
    * Used to enforce backpressure: when true, POST /api/scan should return 503 Service Unavailable.
@@ -65,7 +66,7 @@ export interface IScanPool {
  * - Each scan reserves ~70-140MB. With poolSize=3 and 256MB pod, headroom is ~180MB
  * - Setting poolSize too high will cause OOM kills; too low will queue excessive tasks
  */
-export class WorkerPool implements IScanPool {
+export class WorkerPool extends EventEmitter implements IScanPool {
   private threads: PooledThread[] = [];
   private queue: ScanTask[] = [];
   private shuttingDown = false;
@@ -85,6 +86,7 @@ export class WorkerPool implements IScanPool {
     maxQueueSize = 0,
     workerScriptPath = path.join(__dirname, 'scan.worker.js'),
   ) {
+    super();
     this.poolSize = poolSize;
     this.maxQueueSize = maxQueueSize;
     this.workerScriptPath = workerScriptPath;
@@ -174,12 +176,20 @@ export class WorkerPool implements IScanPool {
 
   /**
    * Handles completion ('done' or 'error') messages from a thread.
-   * Marks thread idle and drains the queue.
+   * Marks thread idle, emits events, and drains the queue.
    */
   private onMessage(thread: PooledThread, msg: WorkerMessage): void {
     if (msg.type === 'done' || msg.type === 'error') {
       logger.debug(`Thread ${thread.id} completed task ${msg.scanId} with status ${msg.type}`);
       thread.busy = false;
+
+      // Emit completion/failure events for GraphQL subscriptions
+      if (msg.type === 'done') {
+        this.emit('scanComplete', { scanId: msg.scanId });
+      } else if (msg.type === 'error') {
+        this.emit('scanFailed', { scanId: msg.scanId });
+      }
+
       this.drainQueue(thread);
     }
   }

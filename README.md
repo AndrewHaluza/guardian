@@ -17,7 +17,7 @@ Code Guardian is a **standalone Node.js service** that:
 
 ### Prerequisites
 
-1. **Node.js 18+** with npm
+1. **Node.js 22+** (LTS) with npm 10+
 2. **MongoDB** (local or remote)
 3. **Trivy** security scanner
 
@@ -94,7 +94,203 @@ curl http://localhost:3000/api/scan/550e8400-e29b-41d4-a716-446655440000
 # {"scanId": "550e8400-e29b-41d4-a716-446655440000", "status": "completed", "results": [...]}
 ```
 
+## Frontend Web UI
+
+Guardian includes a simple React frontend for easy interaction with the scanner.
+
+### Prerequisites
+
+- Node.js 16+
+- Backend service running on `localhost:3000`
+
+### Run the Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The frontend will be available at `http://localhost:5173` and automatically proxies API requests to the backend.
+
+### Features
+
+- 📝 Enter repository URL and start a scan
+- ⏱️ Automatic polling every 2 seconds
+- 📊 Display results with color-coded severity levels
+- 📱 Responsive mobile-friendly design
+- 🚀 Built with React + TypeScript + Vite
+
+### Frontend Details
+
+See [`frontend/README.md`](./frontend/README.md) for more information about the frontend, including:
+- Development setup
+- Building for production
+- GraphQL integration
+- Styling and customization
+
 ## API Reference
+
+Guardian provides both **REST** and **GraphQL** APIs for maximum flexibility.
+
+### GraphQL API
+
+The GraphQL API provides real-time updates via WebSocket subscriptions.
+
+#### Endpoints
+
+- **Queries & Mutations**: `POST http://localhost:3000/graphql`
+- **Subscriptions**: `ws://localhost:3000/graphql` (WebSocket)
+
+#### Schema
+
+**Scan Type:**
+```graphql
+type Scan {
+  id: ID!                          # Scan ID (UUID v4)
+  status: String!                  # queued, scanning, completed, failed
+  repoUrl: String!                 # Repository URL
+  createdAt: String!               # Creation timestamp (ISO 8601)
+  updatedAt: String!               # Last update timestamp (ISO 8601)
+  errorMessage: String             # Error message if failed
+  results: [Vulnerability!]!        # Array of vulnerabilities found
+}
+```
+
+**Vulnerability Type:**
+```graphql
+type Vulnerability {
+  Severity: String                 # CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN
+  VulnerabilityID: String          # CVE-XXXX-XXXXX or GHSA identifier
+  Title: String                    # Vulnerability title
+  Description: String              # Detailed description
+  PkgName: String                  # Vulnerable package name
+  InstalledVersion: String         # Currently installed version
+  FixedVersion: String             # Fixed version (if available)
+}
+```
+
+#### Queries
+
+**Get Scan Details:**
+```graphql
+query {
+  scan(id: "550e8400-e29b-41d4-a716-446655440000") {
+    id
+    status
+    repoUrl
+    createdAt
+    updatedAt
+    results {
+      Severity
+      VulnerabilityID
+      Title
+      PkgName
+      InstalledVersion
+      FixedVersion
+    }
+  }
+}
+```
+
+**GraphQL Request Example:**
+```bash
+curl -X POST http://localhost:3000/graphql \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "query { scan(id: \"550e8400-e29b-41d4-a716-446655440000\") { id status repoUrl results { Severity Title PkgName } } }"
+  }'
+```
+
+#### Mutations
+
+**Start a Scan:**
+```graphql
+mutation {
+  startScan(repoUrl: "https://github.com/owner/repository") {
+    id
+    status
+    createdAt
+  }
+}
+```
+
+**Delete a Scan:**
+```graphql
+mutation {
+  deleteScan(id: "550e8400-e29b-41d4-a716-446655440000")
+}
+```
+
+**Example Request:**
+```bash
+curl -X POST http://localhost:3000/graphql \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "mutation { startScan(repoUrl: \"https://github.com/owner/repository\") { id status createdAt } }"
+  }'
+```
+
+#### Subscriptions
+
+**Real-Time Scan Status Updates:**
+```graphql
+subscription {
+  scanStatus(id: "550e8400-e29b-41d4-a716-446655440000") {
+    id
+    status
+    updatedAt
+    errorMessage
+    results {
+      Severity
+      VulnerabilityID
+      Title
+    }
+  }
+}
+```
+
+**WebSocket Connection Example (using wscat):**
+```bash
+# Install wscat: npm install -g wscat
+
+wscat -c ws://localhost:3000/graphql
+
+# Subscribe to updates
+> {
+  "type": "start",
+  "payload": {
+    "query": "subscription { scanStatus(id: \"550e8400-e29b-41d4-a716-446655440000\") { status updatedAt errorMessage } }"
+  }
+}
+
+# Receive real-time updates
+< {
+  "type": "data",
+  "payload": {
+    "data": {
+      "scanStatus": {
+        "status": "scanning",
+        "updatedAt": "2026-03-08T14:30:00.000Z",
+        "errorMessage": null
+      }
+    }
+  }
+}
+```
+
+#### Comparison: REST vs GraphQL
+
+| Feature | REST API | GraphQL API |
+|---------|----------|------------|
+| Start Scan | `POST /api/scan` | `mutation startScan` |
+| Get Status | `GET /api/scan/:id` (polling) | `query scan` or `subscription scanStatus` |
+| Delete Scan | `DELETE /api/scan/:id` | `mutation deleteScan` |
+| Real-Time Updates | ❌ Requires polling | ✅ WebSocket subscriptions |
+| Overfetching | ✅ Yes (returns all fields) | ❌ No (request only needed fields) |
+| Underfetching | ✅ Yes (may need multiple requests) | ❌ No (single request) |
+
+### REST API
 
 **Machine-readable specification**: See [`openapi.yaml`](./openapi.yaml) for the complete OpenAPI 3.0 specification. This file can be used with tools like Swagger UI, Postman, and code generation utilities.
 
@@ -244,23 +440,50 @@ curl -X DELETE http://localhost:3000/api/scan/550e8400-e29b-41d4-a716-4466554400
 
 ## Architecture
 
-Code Guardian uses a **clean 4-layer architecture**:
+Code Guardian uses a **clean multi-layer architecture** with separate REST and GraphQL entry points:
 
 ```
-HTTP Request
+┌─────────────┬──────────────┐
+│   REST API  │ GraphQL API  │  HTTP/WebSocket
+│  (HTTP)     │ (WS)         │
+└──────┬──────┴────────┬─────┘
+       │               │
+       ├───────┬───────┤
+       ↓       ↓       ↓
+┌─────────────────────────────┐
+│   Controller (REST)         │  Validates input, HTTP responses
+├─────────────────────────────┤
+│   Service Layer             │  Orchestrates scans, concurrent limit
+├─────────────────────────────┤
+│   Worker Pool               │  Pre-warmed threads for scan execution
+│   (worker_threads)          │  Clones repo, runs Trivy, parses JSON
+├─────────────────────────────┤
+│   Event Bridge              │  Bridges pool events to GraphQL PubSub
+├─────────────────────────────┤
+│   Repository                │  Persists documents to MongoDB
+└─────────────────────────────┘
+       ↓
+     MongoDB
+```
+
+**Data Flow:**
+
+```
+REST Request              GraphQL Query/Mutation
+    ↓                            ↓
+  Controller ────────────→  Resolvers
+    ↓                            ↓
+  Service ←──────────────────────┘
     ↓
-┌─────────────────────┐
-│   Controller        │  Validates input, returns HTTP responses
-├─────────────────────┤
-│   Service           │  Orchestrates scans, manages concurrent limit
-├─────────────────────┤
-│   Worker Pool       │  Pre-warmed threads for scan execution
-│   (worker_threads) │  Clones repo, runs Trivy, parses JSON via streams
-├─────────────────────┤
-│   Repository        │  Persists documents to MongoDB
-└─────────────────────┘
+  Worker Pool
     ↓
-  MongoDB
+  [Git Clone + Trivy Scan + Stream Parse]
+    ↓
+  Repository (MongoDB update)
+    ↓
+  Event Bridge (PubSub publish)
+    ↓
+  GraphQL Subscriptions (WebSocket push)
 ```
 
 ### Key Components
@@ -299,6 +522,13 @@ HTTP Request
 - MongoDB document CRUD operations
 - TTL index (7-day auto-delete)
 - Result persistence via `$push` operator
+
+**Event Bridge** (`src/graphql/event-bridge.ts`)
+- Bridges worker pool events to GraphQL PubSub
+- Listens for `scanComplete` and `scanFailed` events
+- Fetches updated scan document and publishes to subscribers
+- Error handling with logging (no unhandled rejections)
+- Keeps GraphQL layer decoupled from REST layer
 
 ### Git Clone Strategy
 
@@ -844,6 +1074,34 @@ npm run watch
 - **Linting**: Uses tsc for type checking (no eslint configured)
 - **Testing**: Mocha + Chai + Sinon
 
+### GraphQL Schema
+
+The GraphQL schema is defined in `src/graphql/schema.ts` using GraphQL type definitions. To view the schema:
+
+```bash
+# The schema is available at GraphQL endpoint during runtime
+# Use any GraphQL IDE:
+# - Apollo Studio: apollo.dev/studio
+# - GraphQL Playground: graphql-playground.com
+# - Altair GraphQL Client: altairgraphql.dev
+
+# Or query via curl (introspection):
+curl -X POST http://localhost:3000/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query": "{ __schema { types { name } } }"}'
+```
+
+### Event Bridge Architecture
+
+The Event Bridge pattern decouples REST and GraphQL layers:
+
+1. **Worker Pool** emits events (`scanComplete`, `scanFailed`)
+2. **Event Bridge** (`src/graphql/event-bridge.ts`) listens and publishes to PubSub
+3. **Resolvers** subscribe to PubSub and send via WebSocket
+4. **Frontend** receives real-time updates
+
+This separation keeps the REST layer unaware of GraphQL, improving testability and maintainability.
+
 ## Evaluation Criteria
 
 Code Guardian is evaluated on:
@@ -855,9 +1113,11 @@ Code Guardian is evaluated on:
    - Passes under `--max-old-space-size=256`
 
 2. **Clean Architecture** ✅
-   - 4-layer separation (Controller/Service/Worker/Repository)
+   - 5-layer separation (Controller/Service/Worker/Repository/EventBridge)
+   - REST and GraphQL API layers with shared service
    - Dependency injection
    - Testable components
+   - Event Bridge pattern decouples API layers
 
 3. **Configurable Severity Filtering** ✅
    - Supports CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN severity levels
@@ -888,6 +1148,14 @@ Code Guardian is evaluated on:
    - Response time < 200ms regardless of repo size
    - Concurrent scan limiting via thread pool capacity (max 3)
    - Backpressure: returns 429 when pool at capacity
+
+8. **GraphQL API with Real-Time Subscriptions** ✅
+   - Full GraphQL Query API for scan retrieval
+   - GraphQL Mutation API for scan creation and deletion
+   - WebSocket subscriptions for real-time status updates
+   - Event Bridge pattern for clean architecture
+   - Proper error handling in event listeners
+   - Supports both REST and GraphQL clients
 
 ## Support
 
