@@ -333,6 +333,20 @@ describe('createStreamPipeline()', () => {
     }
   });
 
+  it('returns empty array when Results key is missing', async () => {
+    const json = JSON.stringify({ NotResults: [] });
+    const tmpFile = path.join(os.tmpdir(), `guardian-no-results-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, json);
+
+    try {
+      const result = await workerModule.createStreamPipeline(tmpFile) as Vulnerability[];
+      // When Results key is missing, stream-json processes no vulnerabilities
+      expect(result).to.be.an('array').with.length(0);
+    } finally {
+      try { fs.rmSync(tmpFile, { force: true }); } catch { /* ignore */ }
+    }
+  });
+
   it('rejects with the 500-cap error when findings exceed 500', async () => {
     const vulns = Array.from({ length: 501 }, (_, i) => ({
       VulnerabilityID: `CVE-MANY-${i}`,
@@ -745,25 +759,6 @@ describe('Stream error handling', () => {
     }
   });
 
-  it('createStreamPipeline rejects on missing Results key', async () => {
-    const json = JSON.stringify({ NotResults: [] });
-    const tmpFile = path.join(os.tmpdir(), `guardian-no-results-${Date.now()}.json`);
-    fs.writeFileSync(tmpFile, json);
-
-    try {
-      let error: Error | undefined;
-      try {
-        await workerModule.createStreamPipeline(tmpFile);
-      } catch (e) {
-        error = e as Error;
-      }
-      // Should resolve with empty array since Results is not picked
-      const result = await workerModule.createStreamPipeline(tmpFile) as Vulnerability[];
-      expect(result).to.be.an('array').with.length(0);
-    } finally {
-      try { fs.rmSync(tmpFile, { force: true }); } catch { /* ignore */ }
-    }
-  });
 });
 
 // ---------------------------------------------------------------------------

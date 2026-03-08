@@ -139,6 +139,40 @@ describe('ScanService', () => {
       const result2 = await service.startScan('https://github.com/repo-2');
       expect(result2).to.not.be.null;
     });
+
+    it('propagates repo.create() errors to caller', async () => {
+      const repo = makeRepoStub();
+      (repo.create as sinon.SinonStub).rejects(new Error('DB connection lost'));
+      const service = new ScanService(repo as never, pool);
+
+      let err: Error | null = null;
+      try {
+        await service.startScan('https://github.com/example/repo');
+      } catch (e) {
+        err = e as Error;
+      }
+
+      expect(err).to.not.be.null;
+      expect(err!.message).to.include('DB connection lost');
+      expect((pool.submit as sinon.SinonStub).called).to.be.false;
+    });
+
+    it('propagates pool.submit() errors to caller', async () => {
+      const repo = makeRepoStub();
+      const faultyPool = makePoolStub();
+      (faultyPool.submit as sinon.SinonStub).throws(new Error('Thread spawn failed'));
+      const service = new ScanService(repo as never, faultyPool);
+
+      let err: Error | null = null;
+      try {
+        await service.startScan('https://github.com/example/repo');
+      } catch (e) {
+        err = e as Error;
+      }
+
+      expect(err).to.not.be.null;
+      expect(err!.message).to.include('Thread spawn failed');
+    });
   });
 
 
